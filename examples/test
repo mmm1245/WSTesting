@@ -1,3 +1,3 @@
 E:{"slideNumber":3,"songId":1,"type":"DisplayMessage","verseNumber":2}
 S:aaa
-E:{"reason":"malformed json","type":"BadRequestMessage"}
+R:.*

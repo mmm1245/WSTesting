@@ -7,6 +7,8 @@ use url::Url;
 use std::env;
 use std::path::PathBuf;
 use glob::{glob_with, MatchOptions};
+use json::JsonValue;
+use regex::Regex;
 
 fn is_path_file(path : &PathBuf) -> bool {
     let meta = path.metadata();
@@ -89,6 +91,56 @@ fn run_test(url : Url, file : File) -> Result<(),String>{
                             }
                         }
                     }
+                    'R' => {
+                        let regex = Regex::new(data);
+                        match regex {
+                            Ok(regex) => {
+                                let result = read_text(& mut socket);
+                                match result {
+                                    Ok(text) => {
+                                        if !regex.is_match(text.as_str()) {
+                                            return Err(format!("\n\t{} doesnt match\n\tregex {}", text, data));
+                                        }
+                                    }
+                                    Err(err) => {
+                                        return Err(err.to_string());
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                return Err(format!("Invalid regex {}", data));
+                            }
+                        }
+                    }
+                    'J' => {
+                        let result = read_text(& mut socket);
+                        match result {
+                            Ok(text) => {
+                                let data_json = json::parse(data);
+                                let text_json = json::parse(text.as_str());
+                                match data_json {
+                                    Ok(data_json) => {
+                                        match text_json {
+                                            Ok(text_json) => {
+                                                if !does_json_include(&text_json, &data_json) {
+                                                    return Err(format!("\n\t{} doesnt include\n\tjson {}", text, data));
+                                                }
+                                            }
+                                            Err(_) => {
+                                                return Err(format!("Could not parse read json {}", text));
+                                            }
+                                        }
+                                    }
+                                    Err(_) => {
+                                        return Err(format!("Could not parse test json {}", data));
+                                    }
+                                }
+                            }
+                            Err(err) => {
+                                return Err(err.to_string());
+                            }
+                        }
+                    }
                     '#' => {}
                     _ => {
                         return Err(format!("Unknown cmd {}", cmd));
@@ -98,6 +150,42 @@ fn run_test(url : Url, file : File) -> Result<(),String>{
         }
     }
     Ok(())
+}
+
+fn does_json_include(input : &JsonValue, expected : &JsonValue) -> bool {
+    return match expected.clone() {
+        JsonValue::Object(expect_obj) => {
+            if let JsonValue::Object(input_obj) = input {
+                for x in expect_obj.iter() {
+                    if !does_json_include(&input_obj[x.0], x.1) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            false
+        }
+        JsonValue::Array(expect_arr) => {
+            if let JsonValue::Array(input_arr) = input {
+                let mut iter = input_arr.iter();
+                for e in expect_arr.iter() {
+                    let input_val = iter.next();
+                    if let Some(input_val) = input_val {
+                        if !does_json_include(input_val, e) {
+                            return false;
+                        }
+                    } else {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            false
+        }
+        _ => {
+            expected == input
+        }
+    }
 }
 
 fn read_text(socket : &mut WebSocket<MaybeTlsStream<TcpStream>>) -> Result<String,&str> {

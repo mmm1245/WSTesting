@@ -11,5 +11,15 @@ S:aaa
 
 E:{"reason":"malformed json","type":"BadRequestMessage"}
 
+S:aaa
+
+J:{"type":"BadRequestMessage"}
+
+S:aaa
+
+R:.*
+
 ##### E - expected
 ##### S - send
+##### R - regex
+##### J - json
