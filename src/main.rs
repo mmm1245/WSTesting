@@ -32,7 +32,16 @@ fn main() {
             if !is_path_file(&path) {
                 continue;
             }
-            test_results.push((path.display().to_string(),run_test(ws_url.clone(), File::open(&path).expect(format!("Could not open test file {}", path.display()).as_str()))));
+            let file = File::open(&path);
+            let test_name = path.display().to_string();
+            match file {
+                Ok(file) => {
+                    test_results.push((test_name,run_test(ws_url.clone(), file)));
+                }
+                Err(_) => {
+                    test_results.push((test_name.clone(),Err(format!("Could not open test file {}", test_name))));
+                }
+            }
         }
     }
     println!("{}/{} tests passed", test_results.iter().filter(|e| e.1.is_ok()).count(), test_results.len());
@@ -68,9 +77,16 @@ fn run_test(url : Url, file : File) -> Result<(),String>{
                         }
                     }
                     'E' => {
-                        let text = read_text(& mut socket).unwrap();
-                        if text != data {
-                            return Err(format!("\n\texpected {} \n\tgot {}", data, text));
+                        let result = read_text(& mut socket);
+                        match result {
+                            Ok(text) => {
+                                if text != data {
+                                    return Err(format!("\n\texpected {} \n\tgot {}", data, text));
+                                }
+                            }
+                            Err(err) => {
+                                return Err(err.to_string());
+                            }
                         }
                     }
                     '#' => {}
