@@ -60,91 +60,40 @@ fn run_test(url : Url, file : File) -> Result<(),String>{
     for line in file.lines() {
         if let Ok(line) = line {
             let mut chars = line.chars();
-            let cmd = chars.next();
-            let sep = chars.next();
-            if let Some(sep) = sep {
-                if sep != ':' {
-                    return Err("Separator should be ':'".to_string());
-                }
-            } else {
-                return Err("Separator not found".to_string());
+            let cmd = chars.next().ok_or("Line cannot be empty")?;
+            let sep = chars.next().ok_or("Separator not found")?;
+            if sep != ':' {
+                return Err("Separator should be ':'".to_string());
             }
-            if let Some(cmd) = cmd {
-                let data = chars.as_str();
-                match cmd {
-                    'S' => {
-                        let send_result = socket.write_message(Message::Text(data.to_string()));
-                        if let Err(_) = send_result {
-                            return Err("Couldnt send message(probably closed)".to_string());
-                        }
+            let data = chars.as_str();
+            match cmd {
+                'S' => {
+                    socket.write_message(Message::Text(data.to_string())).map_err(|_|"Couldnt send message(probably closed)")?;
+                }
+                'E' => {
+                    let result = read_text(& mut socket)?;
+                    if result != data {
+                        return Err(format!("\n\texpected {} \n\tgot {}", data, result));
                     }
-                    'E' => {
-                        let result = read_text(& mut socket);
-                        match result {
-                            Ok(text) => {
-                                if text != data {
-                                    return Err(format!("\n\texpected {} \n\tgot {}", data, text));
-                                }
-                            }
-                            Err(err) => {
-                                return Err(err.to_string());
-                            }
-                        }
+                }
+                'R' => {
+                    let regex = Regex::new(data).map_err(|_|"Invalid regex")?;
+                    let result = read_text(& mut socket)?;
+                    if !regex.is_match(result.as_str()) {
+                        return Err(format!("\n\t{} doesnt match\n\tregex {}", result, data));
                     }
-                    'R' => {
-                        let regex = Regex::new(data);
-                        match regex {
-                            Ok(regex) => {
-                                let result = read_text(& mut socket);
-                                match result {
-                                    Ok(text) => {
-                                        if !regex.is_match(text.as_str()) {
-                                            return Err(format!("\n\t{} doesnt match\n\tregex {}", text, data));
-                                        }
-                                    }
-                                    Err(err) => {
-                                        return Err(err.to_string());
-                                    }
-                                }
-                            }
-                            Err(_) => {
-                                return Err(format!("Invalid regex {}", data));
-                            }
-                        }
+                }
+                'J' => {
+                    let result = read_text(& mut socket)?;
+                    let data_json = json::parse(data).map_err(|_| format!("Could not parse test json {}", data))?;
+                    let text_json = json::parse(result.as_str()).map_err(|_| format!("Could not parse read json {}", result))?;
+                    if !does_json_include(&text_json, &data_json) {
+                        return Err(format!("\n\t{} doesnt include\n\tjson {}", result, data));
                     }
-                    'J' => {
-                        let result = read_text(& mut socket);
-                        match result {
-                            Ok(text) => {
-                                let data_json = json::parse(data);
-                                let text_json = json::parse(text.as_str());
-                                match data_json {
-                                    Ok(data_json) => {
-                                        match text_json {
-                                            Ok(text_json) => {
-                                                if !does_json_include(&text_json, &data_json) {
-                                                    return Err(format!("\n\t{} doesnt include\n\tjson {}", text, data));
-                                                }
-                                            }
-                                            Err(_) => {
-                                                return Err(format!("Could not parse read json {}", text));
-                                            }
-                                        }
-                                    }
-                                    Err(_) => {
-                                        return Err(format!("Could not parse test json {}", data));
-                                    }
-                                }
-                            }
-                            Err(err) => {
-                                return Err(err.to_string());
-                            }
-                        }
-                    }
-                    '#' => {}
-                    _ => {
-                        return Err(format!("Unknown cmd {}", cmd));
-                    }
+                }
+                '#' => {}
+                _ => {
+                    return Err(format!("Unknown cmd {}", cmd));
                 }
             }
         }
@@ -188,9 +137,9 @@ fn does_json_include(input : &JsonValue, expected : &JsonValue) -> bool {
     }
 }
 
-fn read_text(socket : &mut WebSocket<MaybeTlsStream<TcpStream>>) -> Result<String,&str> {
+fn read_text(socket : &mut WebSocket<MaybeTlsStream<TcpStream>>) -> Result<String,String> {
     loop {
-        let read_val = match socket.read_message().unwrap() {
+        let read_val = match socket.read_message().map_err(|_| "Couldn't read message")? {
             Message::Text(text) => {Some(Ok(text))}
             Message::Binary(_) => {Some(Err("Binary frames not supported"))}
             Message::Ping(_) => {None}
@@ -199,7 +148,7 @@ fn read_text(socket : &mut WebSocket<MaybeTlsStream<TcpStream>>) -> Result<Strin
             Message::Frame(_) => unreachable!()
         };
         if let Some(read_val) = read_val {
-            return read_val
+            return read_val.map_err(|err| err.to_string())
         }
     }
 }
