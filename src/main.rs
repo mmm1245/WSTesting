@@ -20,16 +20,34 @@ fn is_path_file(path : &PathBuf) -> bool {
 
 fn main() {
     let mut args = env::args();
-    let ws_url = Url::parse(args.nth(1).unwrap().as_str()).unwrap();
-    let glob_pattern = args.next().unwrap();
+	if args.len() != 3 {
+		println!("Usage: wstesting (url) (glob)");
+		return;
+	}
 
-    let glob_options = MatchOptions {
+	let ws_url_str = args.nth(1).unwrap();
+    let ws_url = Url::parse(ws_url_str.as_str());
+	if let Err(_) = ws_url {
+		println!("Invalid url: {}", ws_url_str.as_str());
+		return;
+	}
+	let ws_url = ws_url.unwrap();
+
+	let glob_options = MatchOptions {
         case_sensitive: true,
         require_literal_separator: true,
         require_literal_leading_dot: false,
     };
+	let glob_pattern = args.next().unwrap();
+    let globed_files = glob_with(glob_pattern.as_str(), glob_options);
+	if let Err(_) = globed_files {
+		println!("Invalid glob pattern: {}", glob_pattern);
+		return;
+	}
+	let globed_files = globed_files.unwrap();
+
     let mut test_results : Vec<(String,Result<(),String>)> = Vec::new();
-    for entry in glob_with(glob_pattern.as_str(), glob_options).expect("Invalid glob pattern") {
+    for entry in globed_files {
         if let Ok(path) = entry {
             if !is_path_file(&path) {
                 continue;
